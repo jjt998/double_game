@@ -1,5 +1,6 @@
 const app = getApp()
 const cloud = require('../../utils/cloud')
+const audio = require('../../utils/audio')
 
 Page({
   data: {
@@ -9,7 +10,10 @@ Page({
     loading: false,
     booting: true,
     activeRoom: null,
-    errorText: ''
+    errorText: '',
+    soundBgm: true,
+    soundSfx: true,
+    bgmCredit: '原神「璃月 Liyue」· 陈致逸 / HOYO-MiX'
   },
 
   onLoad() {
@@ -17,7 +21,30 @@ Page({
   },
 
   onShow() {
+    this.syncSound()
     this.loadMine()
+  },
+
+  syncSound() {
+    const pref = audio.getPref()
+    this.setData({ soundBgm: pref.bgm, soundSfx: pref.sfx })
+  },
+
+  onToggleBgm() {
+    const next = !this.data.soundBgm
+    // 必须在用户手势里解锁，iOS 才允许播放
+    audio.unlock()
+    audio.setBgm(next)
+    this.setData({ soundBgm: next })
+    if (next) audio.play('tap', 0.5)
+  },
+
+  onToggleSfx() {
+    const next = !this.data.soundSfx
+    audio.unlock()
+    audio.setSfx(next)
+    this.setData({ soundSfx: next })
+    if (next) audio.play('tap', 0.5)
   },
 
   loadMine() {
@@ -67,6 +94,9 @@ Page({
   onCreate() {
     if (this.data.loading) return
     const self = this
+    audio.unlock()
+    audio.startBgm()
+    audio.play('tap')
     this.setData({ loading: true })
 
     app
@@ -93,6 +123,9 @@ Page({
     if (this.data.loading) return
 
     const self = this
+    audio.unlock()
+    audio.startBgm()
+    audio.play('tap')
     this.setData({ loading: true })
 
     app
@@ -113,6 +146,9 @@ Page({
   onResume() {
     const room = this.data.activeRoom
     if (!room) return
+    audio.unlock()
+    audio.startBgm()
+    audio.play('tap')
     wx.navigateTo({ url: '/pages/game/game?roomId=' + room.id })
   },
 

@@ -5,7 +5,7 @@
       <text class="nav-code" wx:if="{{roomCode}}">房间 {{roomCode}}</text>
       <text class="nav-code" wx:else>双弈</text>
     </view>
-    <view class="nav-right"></view>
+    <view class="nav-right {{soundOn ? '' : 'muted'}}" bindtap="onToggleSound">{{soundOn ? '♪' : '静音'}}</view>
   </view>
 
   <block wx:if="{{roomCode}}">
@@ -66,7 +66,7 @@
         <view
           wx:for="{{stones}}"
           wx:key="i"
-          class="stone {{item.color}} {{item.win ? 'win' : ''}}"
+          class="stone {{item.color}} {{item.win ? 'win' : ''}} {{item.pending ? 'pending' : ''}}"
           style="left:{{item.left}}%;top:{{item.top}}%"
         >
           <view wx:if="{{item.last}}" class="last-mark"></view>

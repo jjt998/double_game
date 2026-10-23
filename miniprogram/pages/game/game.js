@@ -1,5 +1,6 @@
 const app = getApp()
 const cloud = require('../../utils/cloud')
+const audio = require('../../utils/audio')
 
 const SIZE = 15
 const GRID = []
@@ -134,6 +135,7 @@ Page({
     msgBlack: null,
     msgWhite: null,
     preview: null,
+    pendingStone: null,
     fireEnabled: true,
     fireBlackLv: 0,
     fireWhiteLv: 0,
@@ -141,7 +143,8 @@ Page({
     firePending: false,
     fireValue: false,
     fireBusy: false,
-    hintMark: null
+    hintMark: null,
+    soundOn: true
   },
 
   onLoad(options) {
@@ -172,13 +175,15 @@ Page({
 
     this.setData({
       statusBarH: app.globalData.statusBarHeight || 20,
-      boardSize: boardSize
+      boardSize: boardSize,
+      soundOn: audio.anyOn()
     })
 
     this.init()
   },
 
   onShow() {
+    this.setData({ soundOn: audio.anyOn() })
     if (!this.loaded) return
     this.resume()
   },
@@ -252,20 +257,42 @@ Page({
     const mine = seat >= 0 && room.players[seat] ? room.players[seat].color : ''
     const opp = mine === 'black' ? 'white' : 'black'
     const winLine = room.winLine || []
-    const stones = []
 
-    for (let i = 0; i < room.board.length; i++) {
-      const value = room.board[i]
+    // 乐观子对账：服务器棋盘上该点已是我的颜色 → 确认，摘掉标记；
+    // 服务器已走过这手但落点不是我的子（被拒/房间状态变了）→ 撤掉；
+    // 服务器还没追平（watch 旧快照）→ 继续用乐观棋盘展示
+    let board = room.board
+    let pendingStone = this.data.pendingStone
+    if (pendingStone) {
+      const pIdx = pendingStone.row * SIZE + pendingStone.col
+      const expect = pendingStone.color === 'black' ? 1 : 2
+      if (room.board[pIdx] === expect) {
+        pendingStone = null
+      } else if (room.status !== 'playing' || room.moveCount >= pendingStone.expectedMoveCount) {
+        pendingStone = null
+      } else {
+        board = room.board.slice()
+        board[pIdx] = expect
+      }
+    }
+
+    const stones = []
+    for (let i = 0; i < board.length; i++) {
+      const value = board[i]
       if (!value) continue
       const row = Math.floor(i / SIZE)
       const col = i % SIZE
+      const isPending = !!(pendingStone && pendingStone.row === row && pendingStone.col === col)
       stones.push({
         i: i,
         left: GRID[col],
         top: GRID[row],
         color: value === 1 ? 'black' : 'white',
         win: winLine.indexOf(i) >= 0,
-        last: !!(room.lastMove && room.lastMove.x === col && room.lastMove.y === row)
+        pending: isPending,
+        last:
+          isPending ||
+          !!(room.lastMove && room.lastMove.x === col && room.lastMove.y === row)
       })
     }
 
@@ -273,7 +300,7 @@ Page({
     if (room.status === 'waiting') {
       statusText = '等 TA 进来'
     } else if (room.status === 'playing') {
-      statusText = room.turn === mine ? '轮到你落子' : '等 TA 落子'
+      statusText = room.turn === mine && !pendingStone ? '轮到你落子' : '等 TA 落子'
     } else if (room.status === 'closed') {
       statusText = '房间已关闭'
     } else {
@@ -315,12 +342,26 @@ Page({
       if (invalid || (opts && opts.clearPreview)) nextPreview = null
     }
 
+    // 对方落子：只在 moveCount 前进且最后一手不是我方时响一声（进房时补看的不响）
+    const moveCount = room.moveCount || 0
+    const lastMove = room.lastMove || null
+    if (
+      room.status === 'playing' &&
+      lastMove &&
+      lastMove.color !== mine &&
+      this.lastSeenMove !== undefined &&
+      moveCount > this.lastSeenMove
+    ) {
+      audio.play('place_op', 0.55)
+    }
+    this.lastSeenMove = moveCount
+
     // 完整房间只留在逻辑层，不再随 setData 传给视图层（board/history 很大，容易造成掉帧）
     this.data.room = room
 
     const fireEnabled = room.fireEnabled !== false
     const levels =
-      room.status === 'playing' ? computeDangerLevels(room.board) : { black: 0, white: 0 }
+      room.status === 'playing' ? computeDangerLevels(board) : { black: 0, white: 0 }
     const fireReq = room.fireRequest || null
     const fireIncoming = !!(fireReq && fireReq.by !== this.uid)
     const firePending = !!(fireReq && fireReq.by === this.uid)
@@ -347,7 +388,8 @@ Page({
       canUndo: canUndo,
       undoPending: undoPending,
       undoIncoming: undoIncoming,
-      preview: nextPreview
+      preview: nextPreview,
+      pendingStone: pendingStone
     }
     if (opts && opts.settlePending) payload.pending = false
 
@@ -407,6 +449,10 @@ Page({
       resultDesc: desc,
       resultTone: tone
     })
+
+    if (tone === 'win') audio.play('win', 0.75)
+    else if (tone === 'lose') audio.play('lose', 0.7)
+    else if (tone === 'draw') audio.play('draw', 0.7)
   },
 
   syncMessages(room) {
@@ -437,6 +483,8 @@ Page({
       payload[item.key] = { text: slot.text, by: slot.by, mine: slot.by === self.uid }
       self.setData(payload)
 
+      if (slot.by !== self.uid) audio.play('msg', 0.5)
+
       if (self.msgTimers[item.color]) clearTimeout(self.msgTimers[item.color])
       self.msgTimers[item.color] = setTimeout(function () {
         const clear = {}
@@ -446,7 +494,23 @@ Page({
     })
   },
 
+  // 用户手势：解锁音频（iOS 必须）+ 轻点击音
+  tap() {
+    audio.unlock()
+    audio.startBgm()
+    audio.play('tap', 0.45)
+  },
+
+  onToggleSound() {
+    audio.unlock()
+    audio.toggleAll()
+    const on = audio.anyOn()
+    this.setData({ soundOn: on })
+    if (on) audio.startBgm()
+  },
+
   onTogglePanel() {
+    this.tap()
     this.setData({ panelOpen: !this.data.panelOpen })
   },
 
@@ -458,6 +522,8 @@ Page({
       this.toast('最多 ' + SENTENCE_MAX + ' 个字')
       return
     }
+
+    audio.play('tap', 0.5)
 
     this.setData({
       draft: draft + ch,
@@ -477,6 +543,7 @@ Page({
   },
 
   onSendSentence() {
+    this.tap()
     const room = this.data.room
     const draft = this.data.draft
 
@@ -556,6 +623,8 @@ Page({
   },
 
   onBoardStart(e) {
+    audio.unlock()
+    audio.startBgm()
     this.longPressed = false
     const touch = e.touches && e.touches[0]
     if (!touch) return
@@ -611,6 +680,8 @@ Page({
     const idx = row * SIZE + col
     if (room.board[idx] !== 0) return
 
+    audio.play('tap', 0.45)
+
     this.setData({
       preview: {
         row: row,
@@ -644,19 +715,44 @@ Page({
     }
     if (this.data.pending) return
 
-    this.setData({ pending: true })
+    // 乐观渲染：先摆上一颗"待确认"的实心子，不等服务器
+    // 落子声同步在点击时就响，不等服务端回包
+    const color = this.data.myColor
+    audio.play('place', 0.7)
+    this.setData({
+      pending: true,
+      preview: null,
+      pendingStone: {
+        row: row,
+        col: col,
+        left: GRID[col],
+        top: GRID[row],
+        color: color,
+        expectedMoveCount: room.moveCount + 1
+      }
+    })
+    // 立即用当前房间数据本地重渲染一次，乐观子马上上板（对账分支会把它合进 stones）
+    this.applyRoom(room, this.seat)
 
     const self = this
     cloud
       .call('place', { roomId: room._id, x: col, y: row })
       .then(function (res) {
-        self.applyRoom(res.room, self.seat, { clearPreview: true, settlePending: true })
+        self.applyRoom(res.room, self.seat, { settlePending: true })
       })
       .catch(function (err) {
         const msg = err.message || ''
         const keepPreview = msg.indexOf('网络') >= 0
-        self.setData({ pending: false })
-        if (!keepPreview) self.setData({ preview: null })
+        const ps = self.data.pendingStone
+        const payload = { pending: false, pendingStone: null }
+        // 网络错误：退回预览态，可直接重新确认；明确拒绝：撤子并拉最新状态
+        payload.preview =
+          keepPreview && ps
+            ? { row: ps.row, col: ps.col, left: ps.left, top: ps.top, color: ps.color }
+            : null
+        self.setData(payload)
+        // 本地重渲染一次，立刻把乐观子从棋盘上撤掉（拒绝场景随后还会被 resume 的真值覆盖）
+        self.applyRoom(self.data.room, self.seat)
         self.toast(msg)
         if (!keepPreview) self.resume()
       })
@@ -719,6 +815,7 @@ Page({
   },
 
   onRematch() {
+    this.tap()
     const room = this.data.room
     if (!room) return
     if (this.data.rematchState === 'waiting') return
@@ -744,6 +841,7 @@ Page({
   },
 
   onUndo() {
+    this.tap()
     const room = this.data.room
     if (!room || room.status !== 'playing') return
     if (this.data.undoBusy) return
@@ -792,6 +890,7 @@ Page({
   },
 
   onToggleFire() {
+    this.tap()
     const room = this.data.room
     if (!room || room.status !== 'playing' || this.data.fireBusy) return
 
@@ -955,6 +1054,7 @@ Page({
   },
 
   onExit() {
+    this.tap()
     this.loaded = false
     this.back()
   },

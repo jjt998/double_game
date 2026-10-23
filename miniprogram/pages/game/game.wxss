@@ -43,9 +43,14 @@ page {
 .nav-right {
   width: 72rpx;
   text-align: right;
-  font-size: 22rpx;
+  font-size: 26rpx;
   letter-spacing: 1rpx;
   color: #B4584C;
+}
+
+.nav-right.muted {
+  font-size: 21rpx;
+  color: #C0B2A4;
 }
 
 .players {
@@ -189,6 +194,20 @@ page {
 .stone.preview {
   opacity: 0.55;
   box-shadow: 0 0 0 3rpx rgba(180, 88, 76, 0.5);
+}
+
+/* 乐观渲染的待确认子：实心但轻微呼吸，服务器确认后自动变回普通子 */
+.stone.pending {
+  animation: stonePendingPulse 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes stonePendingPulse {
+  0% {
+    opacity: 0.72;
+  }
+  100% {
+    opacity: 1;
+  }
 }
 
 .chip-wrap {

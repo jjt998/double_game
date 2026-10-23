@@ -1,4 +1,5 @@
 const cloud = require('./utils/cloud')
+const audio = require('./utils/audio')
 
 App({
   globalData: {
@@ -7,6 +8,7 @@ App({
   },
 
   onLaunch() {
+    audio.init()
     try {
       const info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
       this.globalData.statusBarHeight = info.statusBarHeight || 20
@@ -35,6 +37,14 @@ App({
     cloud.call('init').catch(function (err) {
       console.warn('自动初始化数据表失败，可稍后重试', err)
     })
+  },
+
+  onShow() {
+    audio.resumeAll()
+  },
+
+  onHide() {
+    audio.pauseAll()
   },
 
   ensureUid() {

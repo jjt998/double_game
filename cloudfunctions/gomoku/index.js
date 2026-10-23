@@ -247,8 +247,13 @@ async function placeStone(uid, roomId, x, y) {
 
   if (!updated.stats.updated) throw fail('棋盘刚刚变了，再看一眼')
 
-  const fresh = await rooms.doc(roomId).get()
-  return { ok: true, room: fresh.data }
+  // 最终状态就是上面构造的 data，直接拼回去，省掉一次 doc.get() 往返。
+  // 注意把 _ 指令换回普通值；贴纸/句子等并发字段若略旧，客户端 watch 会推真值校准。
+  const fresh = Object.assign({}, room, data, {
+    lastMove: { x: x, y: y, color: color },
+    version: (room.version || 0) + 1
+  })
+  return { ok: true, room: fresh }
 }
 
 async function rematch(uid, roomId) {

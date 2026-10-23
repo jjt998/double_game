@@ -70,6 +70,13 @@
     <view class="btn {{canJoin ? 'btn-dark' : 'btn-disabled'}}" hover-class="btn-hover" bindtap="onJoin">进入房间</view>
   </view>
 
+  <view class="sound-row">
+    <view class="sound-chip {{soundBgm ? 'on' : ''}}" hover-class="sound-hover" bindtap="onToggleBgm">音乐 {{soundBgm ? '开' : '关'}}</view>
+    <view class="sound-chip {{soundSfx ? 'on' : ''}}" hover-class="sound-hover" bindtap="onToggleSfx">音效 {{soundSfx ? '开' : '关'}}</view>
+  </view>
+
+  <text class="credit" wx:if="{{bgmCredit}}">音乐 · {{bgmCredit}}</text>
+
   <view class="footer">
     <text class="footer-item">无广告</text>
     <view class="footer-dot"></view>
