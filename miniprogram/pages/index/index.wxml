@@ -1,0 +1,82 @@
+<view class="page" style="padding-top:{{statusBarH + 18}}px">
+  <view class="brand">
+    <view class="seal">弈</view>
+    <view class="brand-text">
+      <text class="brand-name">双弈</text>
+      <text class="brand-sub">只有你们两个人的棋局</text>
+    </view>
+  </view>
+
+  <view class="hero">
+    <view class="deco">
+      <view class="deco-line v" style="left:20%"></view>
+      <view class="deco-line v" style="left:40%"></view>
+      <view class="deco-line v" style="left:60%"></view>
+      <view class="deco-line v" style="left:80%"></view>
+      <view class="deco-line h" style="top:20%"></view>
+      <view class="deco-line h" style="top:40%"></view>
+      <view class="deco-line h" style="top:60%"></view>
+      <view class="deco-line h" style="top:80%"></view>
+      <view class="deco-stone black" style="left:40%;top:60%"></view>
+      <view class="deco-stone white" style="left:60%;top:60%"></view>
+      <view class="deco-stone black" style="left:60%;top:40%"></view>
+      <view class="deco-stone white" style="left:80%;top:20%"></view>
+    </view>
+    <view class="hero-copy">
+      <text class="hero-line">不用匹配，不等陌生人</text>
+      <text class="hero-line">开一间房，把号码发给 TA</text>
+    </view>
+  </view>
+
+  <view class="card resume" wx:if="{{activeRoom}}">
+    <view class="resume-main">
+      <text class="card-label">{{activeRoom.caption}}</text>
+      <view class="resume-row">
+        <text class="resume-code">{{activeRoom.code}}</text>
+        <text class="resume-state">{{activeRoom.stateText}}</text>
+      </view>
+    </view>
+    <view class="resume-btn" bindtap="onResume">{{activeRoom.actionText}}</view>
+  </view>
+
+  <view class="card">
+    <text class="card-title">开一间房</text>
+    <text class="card-desc">生成一个 4 位房间号，只有拿到号码的人才能坐下</text>
+    <view class="btn btn-primary" hover-class="btn-hover" bindtap="onCreate">
+      <text wx:if="{{!loading}}">创建房间</text>
+      <text wx:else>正在开门…</text>
+    </view>
+  </view>
+
+  <view class="divider">
+    <view class="divider-line"></view>
+    <text class="divider-text">或者</text>
+    <view class="divider-line"></view>
+  </view>
+
+  <view class="card">
+    <text class="card-title">去 TA 的房间</text>
+    <input
+      class="code-input"
+      type="number"
+      maxlength="4"
+      value="{{code}}"
+      placeholder="输入 4 位房间号"
+      placeholder-class="code-ph"
+      bindinput="onCodeInput"
+      confirm-type="go"
+      bindconfirm="onJoin"
+    />
+    <view class="btn {{canJoin ? 'btn-dark' : 'btn-disabled'}}" hover-class="btn-hover" bindtap="onJoin">进入房间</view>
+  </view>
+
+  <view class="footer">
+    <text class="footer-item">无广告</text>
+    <view class="footer-dot"></view>
+    <text class="footer-item">无匹配</text>
+    <view class="footer-dot"></view>
+    <text class="footer-item">只有你们</text>
+  </view>
+
+  <view class="error" wx:if="{{errorText}}">{{errorText}}</view>
+</view>

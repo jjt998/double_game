@@ -1,0 +1,12 @@
+node_modules/
+miniprogram_npm/
+.project
+.preview/
+project.private.config.json
+.workbuddy/
+.DS_Store
+*.log
+
+# 开发者工具自动生成的子项目配置
+miniprogram/project.config.json
+cloudfunctions/*/project.config.json

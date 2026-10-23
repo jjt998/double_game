@@ -1,0 +1,9 @@
+{
+  "name": "gomoku",
+  "version": "1.0.0",
+  "description": "双弈 · 房间制五子棋云端逻辑",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "~2.6.3"
+  }
+}

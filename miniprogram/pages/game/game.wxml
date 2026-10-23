@@ -1,0 +1,110 @@
+<view class="page {{room ? room.status : ''}}" style="padding-top:{{statusBarH}}px">
+  <view class="nav">
+    <view class="nav-back" bindtap="onBack">‹</view>
+    <view class="nav-center" bindtap="onCopyCode">
+      <text class="nav-code" wx:if="{{room}}">房间 {{room.code}}</text>
+      <text class="nav-code" wx:else>双弈</text>
+    </view>
+    <view class="nav-right"></view>
+  </view>
+
+  <block wx:if="{{room}}">
+    <view class="players">
+      <view class="player {{room.turn === 'black' ? 'active' : ''}}">
+        <view class="chip black"></view>
+        <text class="who">{{myColor === 'black' ? '你' : 'TA'}}</text>
+      </view>
+      <view class="status">{{statusText}}</view>
+      <view class="player right {{room.turn === 'white' ? 'active' : ''}}">
+        <text class="who">{{myColor === 'white' ? '你' : 'TA'}}</text>
+        <view class="chip white"></view>
+      </view>
+    </view>
+
+    <view class="board-wrap">
+      <view
+        id="board"
+        class="board"
+        style="width:{{boardSize}}px;height:{{boardSize}}px"
+        bindtouchstart="onBoardStart"
+        bindtouchend="onBoardEnd"
+        bindlongpress="onBoardLongPress"
+      >
+        <view class="line v" wx:for="{{gridLines}}" wx:key="*this" style="left:{{item}}%"></view>
+        <view class="line h" wx:for="{{gridLines}}" wx:key="*this" style="top:{{item}}%"></view>
+        <view class="star" wx:for="{{stars}}" wx:key="k" style="left:{{item.left}}%;top:{{item.top}}%"></view>
+        <view
+          class="hint-ring"
+          wx:if="{{hintMark}}"
+          style="left:{{hintMark.left}}%;top:{{hintMark.top}}%"
+        ></view>
+        <view
+          wx:for="{{stones}}"
+          wx:key="i"
+          class="stone {{item.color}} {{item.win ? 'win' : ''}}"
+          style="left:{{item.left}}%;top:{{item.top}}%"
+        >
+          <view wx:if="{{item.last}}" class="last-mark"></view>
+        </view>
+        <view class="sticker {{sticker.side}}" wx:if="{{sticker}}">{{sticker.text}}</view>
+      </view>
+    </view>
+
+    <view class="waiting" wx:if="{{room.status === 'waiting'}}">
+      <text class="waiting-label">房间号 · 轻点可复制</text>
+      <text class="waiting-code" bindtap="onCopyCode">{{room.code}}</text>
+      <text class="waiting-tip">把号码告诉 TA，或者直接发过去</text>
+      <button class="btn btn-primary" open-type="share">邀请 TA 进来</button>
+      <text class="waiting-cancel" bindtap="onLeave">取消这间房</text>
+    </view>
+
+    <view class="controls" wx:elif="{{room.status === 'playing'}}">
+      <view class="ghost {{panelOpen ? 'ghost-on' : ''}}" bindtap="onTogglePanel">贴纸</view>
+      <view class="ghost {{canUndo || undoPending ? '' : 'ghost-off'}}" bindtap="onUndo">{{undoPending ? '等 TA 同意' : '悔棋'}}</view>
+      <view class="ghost" bindtap="onResign">认输</view>
+    </view>
+
+    <view class="controls" wx:elif="{{room.status === 'finished'}}">
+      <view class="ghost" bindtap="onRematch">{{rematchLabel}}</view>
+      <view class="ghost" bindtap="onExit">回首页</view>
+    </view>
+  </block>
+
+  <view class="hint" wx:elif="{{loading}}">正在进入房间…</view>
+  <view class="hint" wx:else>{{errorText || '房间不存在'}}</view>
+</view>
+
+<view class="panel-mask" wx:if="{{panelOpen}}" bindtap="onTogglePanel"></view>
+<view class="sticker-panel" wx:if="{{panelOpen}}">
+  <view
+    class="sticker-item"
+    wx:for="{{emotes}}"
+    wx:key="key"
+    data-key="{{item.key}}"
+    bindtap="onSendEmote"
+  >{{item.label}}</view>
+</view>
+
+<view class="undo-bar" wx:if="{{undoIncoming}}">
+  <text class="undo-text">TA 想悔一步</text>
+  <view class="undo-btn main" bindtap="onUndoReply" data-ok="1">同意</view>
+  <view class="undo-btn" bindtap="onUndoReply" data-ok="0">不用</view>
+</view>
+
+<view class="mask" wx:if="{{showResult}}">
+  <view class="result-card">
+    <view class="result-icon {{resultTone}}"></view>
+    <text class="result-title">{{resultTitle}}</text>
+    <text class="result-desc">{{resultDesc}}</text>
+
+    <view
+      class="btn btn-primary"
+      wx:if="{{room.status === 'finished' && rematchState !== 'waiting'}}"
+      bindtap="onRematch"
+    >{{rematchLabel}}</view>
+    <view class="btn btn-waiting" wx:elif="{{rematchState === 'waiting'}}">已邀请，等 TA 同意</view>
+
+    <view class="btn btn-quiet" wx:if="{{room.status === 'finished'}}" bindtap="onCloseResult">先看看棋盘</view>
+    <view class="btn btn-quiet" bindtap="onExit">回首页</view>
+  </view>
+</view>
