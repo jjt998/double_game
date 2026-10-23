@@ -191,6 +191,175 @@ page {
   box-shadow: 0 0 0 3rpx rgba(180, 88, 76, 0.5);
 }
 
+.chip-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chip {
+  position: relative;
+  z-index: 2;
+}
+
+/* 火势舞台：常驻挂载，档位只改 class。
+   尺寸/显隐全部走 transform + opacity 过渡，切换档位时是生长/消退，不是闪现 */
+.fire-stage {
+  position: absolute;
+  left: 50%;
+  bottom: 12rpx;
+  width: 110rpx;
+  height: 96rpx;
+  margin-left: -55rpx;
+  z-index: 1;
+  pointer-events: none;
+  transform-origin: 50% 100%;
+  transition: transform 0.5s cubic-bezier(0.34, 1.45, 0.64, 1), opacity 0.4s ease,
+    filter 0.5s ease;
+}
+
+.fire-stage.lv0 {
+  opacity: 0;
+  transform: scale(0.45) translateY(12rpx);
+}
+
+.fire-stage.lv1 {
+  opacity: 0.95;
+  transform: scale(0.62);
+}
+
+.fire-stage.lv2 {
+  opacity: 1;
+  transform: scale(0.82);
+  filter: drop-shadow(0 0 6rpx rgba(240, 120, 50, 0.4));
+}
+
+.fire-stage.lv3 {
+  opacity: 1;
+  transform: scale(1);
+  filter: drop-shadow(0 0 10rpx rgba(240, 120, 50, 0.65));
+}
+
+/* 三苗常驻：主苗一直在，侧苗只在 L3 淡入 */
+.chip-fire {
+  position: absolute;
+  bottom: 0;
+  pointer-events: none;
+  transform-origin: 50% 100%;
+  animation-name: chipFlame;
+  animation-duration: 1.15s;
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-in-out;
+  animation-direction: alternate;
+  animation-fill-mode: both;
+  transition: opacity 0.45s ease;
+}
+
+.chip-fire.f-main {
+  left: 50%;
+  margin-left: -24rpx;
+  width: 48rpx;
+  height: 76rpx;
+}
+
+.chip-fire.f-side {
+  width: 34rpx;
+  height: 54rpx;
+  opacity: 0;
+}
+
+.chip-fire.f-side.l {
+  left: 12rpx;
+  animation-delay: 0.18s;
+}
+
+.chip-fire.f-side.r {
+  right: 12rpx;
+  animation-delay: 0.34s;
+}
+
+.fire-stage.lv2 .chip-fire {
+  animation-duration: 0.8s;
+}
+
+/* L2 两朵：藏主苗、亮左右侧苗；L3 三苗：主苗补回 */
+.fire-stage.lv2 .chip-fire.f-main {
+  opacity: 0;
+}
+
+.fire-stage.lv2 .chip-fire.f-side,
+.fire-stage.lv3 .chip-fire.f-side {
+  opacity: 0.95;
+}
+
+.fire-stage.lv3 .chip-fire {
+  animation-name: chipFlameRage;
+  animation-duration: 0.5s;
+}
+
+/* 光晕只在 L3 出现，淡入后接脉冲 */
+.fire-glow {
+  position: absolute;
+  left: 50%;
+  bottom: -8rpx;
+  width: 90rpx;
+  height: 90rpx;
+  margin-left: -45rpx;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 170, 90, 0.42) 0%, rgba(255, 170, 90, 0) 70%);
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  pointer-events: none;
+}
+
+.fire-stage.lv3 .fire-glow {
+  opacity: 1;
+  animation: glowPulse 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes glowPulse {
+  0% {
+    opacity: 0.55;
+    transform: scale(0.85);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+/* 摆动只动 transform，opacity 留给档位过渡 */
+@keyframes chipFlame {
+  0% {
+    transform: scaleY(0.9) skewX(-3deg);
+  }
+  50% {
+    transform: scaleY(1.08) skewX(2deg);
+  }
+  100% {
+    transform: scaleY(0.98) skewX(4deg);
+  }
+}
+
+@keyframes chipFlameRage {
+  0% {
+    transform: scaleY(0.82) skewX(-6deg) scaleX(0.94);
+  }
+  25% {
+    transform: scaleY(1.12) skewX(4deg) scaleX(1.04);
+  }
+  50% {
+    transform: scaleY(0.9) skewX(-2deg) scaleX(0.98);
+  }
+  75% {
+    transform: scaleY(1.15) skewX(6deg) scaleX(1.06);
+  }
+  100% {
+    transform: scaleY(0.88) skewX(-4deg) scaleX(0.96);
+  }
+}
+
 .waiting {
   margin-top: 32rpx;
   width: 100%;

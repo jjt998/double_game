@@ -92,6 +92,8 @@ async function createRoom(uid) {
     undoRequest: null,
     sentenceBlack: null,
     sentenceWhite: null,
+    fireEnabled: true,
+    fireRequest: null,
     hint: null,
     turn: 'black',
     winner: '',
@@ -275,6 +277,7 @@ async function rematch(uid, roomId) {
       undoRequest: null,
       sentenceBlack: null,
       sentenceWhite: null,
+      fireRequest: null,
       hint: null,
       status: 'playing',
       turn: 'black',
@@ -477,6 +480,60 @@ async function sendHint(uid, roomId, x, y) {
   return { ok: true, room: fresh.data }
 }
 
+async function requestFire(uid, roomId, enabled) {
+  const res = await rooms.doc(roomId).get().catch(function () { return null })
+  const room = res && res.data ? res.data : null
+  if (!room) throw fail('房间不存在')
+  if (room.status !== 'playing') throw fail('对局中才能改火势')
+
+  if (room.playerIds.indexOf(uid) < 0) throw fail('你不在这个房间里')
+  if (room.fireRequest) throw fail('已经有一个请求了，等 TA 回应')
+
+  const current = room.fireEnabled !== false
+  const target = !!enabled
+  if (target === current) throw fail(target ? '火势已经是开的' : '火势已经是关的')
+
+  const updated = await rooms
+    .where({ _id: roomId, version: room.version })
+    .update({
+      data: {
+        fireRequest: _.set({ by: uid, value: target, at: Date.now() }),
+        updatedAt: Date.now(),
+        version: _.inc(1)
+      }
+    })
+  if (!updated.stats.updated) throw fail('状态刚变过，再试一次')
+
+  const fresh = await rooms.doc(roomId).get()
+  return { ok: true, room: fresh.data }
+}
+
+async function respondFire(uid, roomId, accept) {
+  const res = await rooms.doc(roomId).get().catch(function () { return null })
+  const room = res && res.data ? res.data : null
+  if (!room) throw fail('房间不存在')
+
+  const request = room.fireRequest
+  if (!request) throw fail('请求已经失效了')
+  if (request.by === uid) throw fail('等对方回应就好')
+  if (room.playerIds.indexOf(uid) < 0) throw fail('你不在这个房间里')
+
+  const data = {
+    fireRequest: null,
+    updatedAt: Date.now(),
+    version: _.inc(1)
+  }
+  if (accept) data.fireEnabled = !!request.value
+
+  const updated = await rooms
+    .where({ _id: roomId, version: room.version })
+    .update({ data: data })
+  if (!updated.stats.updated) throw fail('状态刚变过，再试一次')
+
+  const fresh = await rooms.doc(roomId).get()
+  return { ok: true, room: fresh.data, accepted: !!accept }
+}
+
 async function resign(uid, roomId) {
   const res = await rooms.doc(roomId).get().catch(function () { return null })
   const room = res && res.data ? res.data : null
@@ -601,6 +658,10 @@ async function runAction(action, event, uid) {
       return await cancelUndo(uid, event.roomId)
     case 'sendSentence':
       return await sendSentence(uid, event.roomId, event.text)
+    case 'requestFire':
+      return await requestFire(uid, event.roomId, event.enabled)
+    case 'respondFire':
+      return await respondFire(uid, event.roomId, !!event.accept)
     case 'sendHint':
       return await sendHint(uid, event.roomId, event.x, event.y)
     case 'leave':

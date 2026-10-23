@@ -11,13 +11,29 @@
   <block wx:if="{{roomCode}}">
     <view class="players">
       <view class="player {{roomTurn === 'black' ? 'active' : ''}}">
-        <view class="chip black"></view>
+        <view class="chip-wrap">
+          <view class="fire-stage lv{{fireBlackLv}}">
+            <view class="fire-glow"></view>
+            <image class="chip-fire f-side l" src="/assets/flame-up.png" mode="scaleToFill"></image>
+            <image class="chip-fire f-main" src="/assets/flame-up.png" mode="scaleToFill"></image>
+            <image class="chip-fire f-side r" src="/assets/flame-up.png" mode="scaleToFill"></image>
+          </view>
+          <view class="chip black"></view>
+        </view>
         <text class="who">{{myColor === 'black' ? '你' : 'TA'}}</text>
       </view>
       <view class="status">{{statusText}}</view>
       <view class="player right {{roomTurn === 'white' ? 'active' : ''}}">
         <text class="who">{{myColor === 'white' ? '你' : 'TA'}}</text>
-        <view class="chip white"></view>
+        <view class="chip-wrap">
+          <view class="fire-stage lv{{fireWhiteLv}}">
+            <view class="fire-glow"></view>
+            <image class="chip-fire f-side l" src="/assets/flame-up.png" mode="scaleToFill"></image>
+            <image class="chip-fire f-main" src="/assets/flame-up.png" mode="scaleToFill"></image>
+            <image class="chip-fire f-side r" src="/assets/flame-up.png" mode="scaleToFill"></image>
+          </view>
+          <view class="chip white"></view>
+        </view>
       </view>
     </view>
 
@@ -60,6 +76,7 @@
           class="stone preview {{preview.color}}"
           style="left:{{preview.left}}%;top:{{preview.top}}%"
         ></view>
+
       </view>
     </view>
 
@@ -108,6 +125,7 @@
       <view class="controls">
         <view class="ghost {{panelOpen ? 'ghost-on' : ''}}" bindtap="onTogglePanel">码字</view>
         <view class="ghost {{canUndo || undoPending ? '' : 'ghost-off'}}" bindtap="onUndo">{{undoPending ? '等 TA 同意' : '悔棋'}}</view>
+        <view class="ghost {{fireEnabled ? 'ghost-on' : 'ghost-off'}}" bindtap="onToggleFire">火势</view>
         <view class="ghost" bindtap="onResign">认输</view>
 
         <view class="confirm-layer" wx:if="{{preview}}">
@@ -131,6 +149,12 @@
   <text class="undo-text">TA 想悔一步</text>
   <view class="undo-btn main" bindtap="onUndoReply" data-ok="1">同意</view>
   <view class="undo-btn" bindtap="onUndoReply" data-ok="0">不用</view>
+</view>
+
+<view class="undo-bar" wx:elif="{{fireIncoming}}" style="top:{{statusBarH + 52}}px">
+  <text class="undo-text">TA 想{{fireValue ? '开启' : '关闭'}}火势</text>
+  <view class="undo-btn main" bindtap="onRespondFire" data-ok="1">同意</view>
+  <view class="undo-btn" bindtap="onRespondFire" data-ok="0">不用</view>
 </view>
 
 <view class="mask" wx:if="{{showResult}}">

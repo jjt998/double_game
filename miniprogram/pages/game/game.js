@@ -21,6 +21,82 @@ const BOARD_CHARS = [
 
 const SENTENCE_MAX = 50
 
+// 危险分级：0 无 / 1 活三 / 2 冲四或双活三 / 3 活四或四三
+// 判定方式：对每个空点做一次假设落子，统计「成五点」和「能形成活四的方向」
+function countLine(board, x, y, dx, dy, color) {
+  let count = 1
+
+  let cx = x + dx
+  let cy = y + dy
+  while (cx >= 0 && cx < SIZE && cy >= 0 && cy < SIZE && board[cy * SIZE + cx] === color) {
+    count++
+    cx += dx
+    cy += dy
+  }
+  const afterEmpty = cx >= 0 && cx < SIZE && cy >= 0 && cy < SIZE && board[cy * SIZE + cx] === 0
+
+  cx = x - dx
+  cy = y - dy
+  while (cx >= 0 && cx < SIZE && cy >= 0 && cy < SIZE && board[cy * SIZE + cx] === color) {
+    count++
+    cx -= dx
+    cy -= dy
+  }
+  const beforeEmpty = cx >= 0 && cx < SIZE && cy >= 0 && cy < SIZE && board[cy * SIZE + cx] === 0
+
+  return { count: count, beforeEmpty: beforeEmpty, afterEmpty: afterEmpty }
+}
+
+function computeDangerLevels(board) {
+  const dirs = [[1, 0], [0, 1], [1, 1], [1, -1]]
+  const result = { black: 0, white: 0 }
+
+  for (let color = 1; color <= 2; color++) {
+    let winPoints = 0
+    const openDirs = {}
+
+    for (let i = 0; i < SIZE * SIZE; i++) {
+      if (board[i] !== 0) continue
+      const x = i % SIZE
+      const y = (i - x) / SIZE
+
+      board[i] = color
+      let makesFive = false
+
+      for (let d = 0; d < 4; d++) {
+        if (countLine(board, x, y, dirs[d][0], dirs[d][1], color).count >= 5) {
+          makesFive = true
+          break
+        }
+      }
+
+      if (makesFive) {
+        winPoints++
+      } else {
+        for (let d = 0; d < 4; d++) {
+          const info = countLine(board, x, y, dirs[d][0], dirs[d][1], color)
+          if (info.count === 4 && info.beforeEmpty && info.afterEmpty) openDirs[d] = true
+        }
+      }
+
+      board[i] = 0
+    }
+
+    const dirCount = Object.keys(openDirs).length
+    let lv = 0
+    if (winPoints >= 2) lv = 3
+    else if (winPoints === 1 && dirCount >= 1) lv = 3
+    else if (winPoints === 1) lv = 2
+    else if (dirCount >= 2) lv = 2
+    else if (dirCount === 1) lv = 1
+
+    if (color === 1) result.black = lv
+    else result.white = lv
+  }
+
+  return result
+}
+
 Page({
   data: {
     statusBarH: 20,
@@ -58,6 +134,13 @@ Page({
     msgBlack: null,
     msgWhite: null,
     preview: null,
+    fireEnabled: true,
+    fireBlackLv: 0,
+    fireWhiteLv: 0,
+    fireIncoming: false,
+    firePending: false,
+    fireValue: false,
+    fireBusy: false,
     hintMark: null
   },
 
@@ -235,10 +318,23 @@ Page({
     // 完整房间只留在逻辑层，不再随 setData 传给视图层（board/history 很大，容易造成掉帧）
     this.data.room = room
 
+    const fireEnabled = room.fireEnabled !== false
+    const levels =
+      room.status === 'playing' ? computeDangerLevels(room.board) : { black: 0, white: 0 }
+    const fireReq = room.fireRequest || null
+    const fireIncoming = !!(fireReq && fireReq.by !== this.uid)
+    const firePending = !!(fireReq && fireReq.by === this.uid)
+
     const payload = {
       roomCode: room.code || '',
       roomStatus: room.status || '',
       roomTurn: room.turn || '',
+      fireEnabled: fireEnabled,
+      fireBlackLv: fireEnabled ? levels.black : 0,
+      fireWhiteLv: fireEnabled ? levels.white : 0,
+      fireIncoming: fireIncoming,
+      firePending: firePending,
+      fireValue: !!(fireReq && fireReq.value),
       seat: seat,
       myColor: mine,
       oppColor: opp,
@@ -446,7 +542,7 @@ Page({
         const col = Math.round(((touch.clientX - rect.left) / rect.width) * SIZE - 0.5)
         const row = Math.round(((touch.clientY - rect.top) / rect.height) * SIZE - 0.5)
         if (col < 0 || col > SIZE - 1 || row < 0 || row > SIZE - 1) return
-        if (room.board[row * SIZE + col] !== 0) return
+        if (room.board[row * SIZE + col] !== 0) return
         cloud
           .call('sendHint', { roomId: room._id, x: col, y: row })
           .then(function (res) {
@@ -548,7 +644,7 @@ Page({
     }
     if (this.data.pending) return
 
-    this.setData({ pending: true })
+    this.setData({ pending: true })
 
     const self = this
     cloud
@@ -691,6 +787,62 @@ Page({
       })
       .catch(function (err) {
         self.setData({ undoBusy: false })
+        self.toast(err.message)
+      })
+  },
+
+  onToggleFire() {
+    const room = this.data.room
+    if (!room || room.status !== 'playing' || this.data.fireBusy) return
+
+    if (this.data.firePending) {
+      this.toast('已经发过请求了，等 TA 同意')
+      return
+    }
+
+    const target = !this.data.fireEnabled
+    const self = this
+
+    wx.showModal({
+      title: target ? '开启火势' : '关闭火势',
+      content: '棋盘边缘的火势动画会' + (target ? '打开' : '关掉') + '，需要 TA 同意。',
+      confirmText: '发请求',
+      confirmColor: '#B4584C',
+      success(res) {
+        if (!res.confirm) return
+        self.setData({ fireBusy: true })
+        cloud
+          .call('requestFire', { roomId: room._id, enabled: target })
+          .then(function (r) {
+            self.setData({ fireBusy: false })
+            self.applyRoom(r.room, self.seat)
+            self.toast('等 TA 同意')
+          })
+          .catch(function (err) {
+            self.setData({ fireBusy: false })
+            self.toast(err.message)
+          })
+      }
+    })
+  },
+
+  onRespondFire(e) {
+    const accept = String(e.currentTarget.dataset.ok) === '1'
+    const room = this.data.room
+    if (!room || this.data.fireBusy) return
+
+    const self = this
+    this.setData({ fireBusy: true })
+
+    cloud
+      .call('respondFire', { roomId: room._id, accept: accept })
+      .then(function (r) {
+        self.setData({ fireBusy: false })
+        self.applyRoom(r.room, self.seat)
+        self.toast(accept ? '已更新' : '已拒绝')
+      })
+      .catch(function (err) {
+        self.setData({ fireBusy: false })
         self.toast(err.message)
       })
   },
