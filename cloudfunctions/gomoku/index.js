@@ -90,7 +90,8 @@ async function createRoom(uid) {
     board: emptyBoard(),
     history: [],
     undoRequest: null,
-    emote: null,
+    sentenceBlack: null,
+    sentenceWhite: null,
     hint: null,
     turn: 'black',
     winner: '',
@@ -272,6 +273,9 @@ async function rematch(uid, roomId) {
       board: emptyBoard(),
       history: [],
       undoRequest: null,
+      sentenceBlack: null,
+      sentenceWhite: null,
+      hint: null,
       status: 'playing',
       turn: 'black',
       winner: '',
@@ -401,30 +405,42 @@ async function cancelUndo(uid, roomId) {
   return { ok: true, room: fresh.data }
 }
 
-const EMOTE_KEYS = ['hurry', 'smug', 'plead', 'hug', 'think', 'win']
+const SENTENCE_CHARS = [
+  '你', '个', '小', '菜', '鸡', '垃', '圾', '弱', '爆', '了', '呵', '嘻',
+  '哈', '狗', '猪', '羊', '？', '饭', '否', '没', '吗', '多', '练', '嗯'
+]
+const SENTENCE_MAX = 50
 
-async function sendEmote(uid, roomId, key) {
-  if (EMOTE_KEYS.indexOf(key) < 0) throw fail('没有这个表情')
+async function sendSentence(uid, roomId, text) {
+  text = String(text || '')
+  if (!text.length) throw fail('还没有拼字')
+  if (text.length > SENTENCE_MAX) throw fail('最多 50 个字')
+
+  for (let i = 0; i < text.length; i++) {
+    if (SENTENCE_CHARS.indexOf(text.charAt(i)) < 0) throw fail('只能使用字盘里的字')
+  }
 
   const res = await rooms.doc(roomId).get().catch(function () { return null })
   const room = res && res.data ? res.data : null
   if (!room) throw fail('房间不存在')
-  if (room.status !== 'playing') throw fail('对局中才能发表情')
+  if (room.status !== 'playing') throw fail('对局中才能说话')
 
   const seat = room.playerIds.indexOf(uid)
   if (seat < 0) throw fail('你不在这个房间里')
   const color = room.players[seat].color
+  const slot = color === 'black' ? room.sentenceBlack : room.sentenceWhite
 
   const now = Date.now()
-  if (room.emote && now - (room.emote.at || 0) < 700) throw fail('慢一点，一次发一个')
+  if (slot && now - (slot.at || 0) < 1000) throw fail('慢一点')
 
-  await rooms.doc(roomId).update({
-    data: {
-      emote: _.set({ by: uid, color: color, key: key, at: now }),
-      updatedAt: now,
-      version: _.inc(1)
-    }
+  const data = { updatedAt: now, version: _.inc(1) }
+  data[color === 'black' ? 'sentenceBlack' : 'sentenceWhite'] = _.set({
+    text: text,
+    by: uid,
+    at: now
   })
+
+  await rooms.doc(roomId).update({ data: data })
 
   const fresh = await rooms.doc(roomId).get()
   return { ok: true, room: fresh.data }
@@ -583,8 +599,8 @@ async function runAction(action, event, uid) {
       return await respondUndo(uid, event.roomId, !!event.accept)
     case 'cancelUndo':
       return await cancelUndo(uid, event.roomId)
-    case 'sendEmote':
-      return await sendEmote(uid, event.roomId, event.key)
+    case 'sendSentence':
+      return await sendSentence(uid, event.roomId, event.text)
     case 'sendHint':
       return await sendHint(uid, event.roomId, event.x, event.y)
     case 'leave':

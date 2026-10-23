@@ -13,19 +13,13 @@ for (let i = 0; i < STAR_POINTS.length; i++) {
   STARS.push({ k: i, left: GRID[STAR_POINTS[i][0]], top: GRID[STAR_POINTS[i][1]] })
 }
 
-const EMOTES = [
-  { key: 'hurry', label: '催你' },
-  { key: 'smug', label: '得意' },
-  { key: 'plead', label: '求让' },
-  { key: 'hug', label: '抱抱' },
-  { key: 'think', label: '思考' },
-  { key: 'win', label: '赢了' }
+const BOARD_CHARS = [
+  '弱', '你', '吗', '猪', '呵', '饭', '小', '圾',
+  '爆', '没', '狗', '？', '菜', '嘻', '个', '羊',
+  '练', '垃', '嗯', '鸡', '多', '否', '哈', '了'
 ]
 
-const EMOTE_TEXT = {}
-for (let i = 0; i < EMOTES.length; i++) {
-  EMOTE_TEXT[EMOTES[i].key] = EMOTES[i].label
-}
+const SENTENCE_MAX = 50
 
 Page({
   data: {
@@ -34,6 +28,9 @@ Page({
     gridLines: GRID,
     stars: STARS,
     room: null,
+    roomCode: '',
+    roomStatus: '',
+    roomTurn: '',
     seat: -1,
     myColor: '',
     oppColor: '',
@@ -52,9 +49,15 @@ Page({
     undoPending: false,
     undoIncoming: false,
     undoBusy: false,
-    emotes: EMOTES,
+    chars: BOARD_CHARS,
+    charMax: SENTENCE_MAX,
+    draft: '',
+    draftScroll: 0,
+    sending: false,
     panelOpen: false,
-    sticker: null,
+    msgBlack: null,
+    msgWhite: null,
+    preview: null,
     hintMark: null
   },
 
@@ -64,15 +67,25 @@ Page({
     this.seat = -1
     this.loaded = false
     this.lastResultRound = null
+    this.msgTimers = { black: null, white: null }
+    this.shownMsgAt = { black: 0, white: 0 }
 
     let width = 375
+    let height = 812
     try {
       const info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
       width = info.windowWidth || 375
+      height = info.windowHeight || 812
     } catch (e) {
       width = 375
+      height = 812
     }
-    const boardSize = Math.min(Math.round(width - 32), 440)
+
+    // 导航 44 + 玩家条 30 + 消息区 78 + 字盘预留 190 + 操作栏 50 + 底部 17 + 余量 8
+    const CHROME = 417
+    const statusBarH = app.globalData.statusBarHeight || 20
+    const fitHeight = height - statusBarH - CHROME
+    const boardSize = Math.max(200, Math.min(Math.round(width - 32), fitHeight, 440))
 
     this.setData({
       statusBarH: app.globalData.statusBarHeight || 20,
@@ -97,8 +110,11 @@ Page({
       clearInterval(this.pollTimer)
       this.pollTimer = null
     }
-    if (this.stickerTimer) clearTimeout(this.stickerTimer)
     if (this.hintTimer) clearTimeout(this.hintTimer)
+    if (this.msgTimers) {
+      clearTimeout(this.msgTimers.black)
+      clearTimeout(this.msgTimers.white)
+    }
   },
 
   init() {
@@ -119,6 +135,8 @@ Page({
         self.roomId = res.room._id
         self.seat = res.seat
         self.loaded = true
+        self.shownMsgAt.black = res.room.sentenceBlack ? res.room.sentenceBlack.at : 0
+        self.shownMsgAt.white = res.room.sentenceWhite ? res.room.sentenceWhite.at : 0
         self.applyRoom(res.room, res.seat)
         self.startWatch()
         wx.setKeepScreenOn({ keepScreenOn: true })
@@ -134,13 +152,15 @@ Page({
     cloud
       .call('get', { roomId: this.roomId })
       .then(function (res) {
+        self.shownMsgAt.black = res.room.sentenceBlack ? res.room.sentenceBlack.at : 0
+        self.shownMsgAt.white = res.room.sentenceWhite ? res.room.sentenceWhite.at : 0
         self.applyRoom(res.room, self.seat)
         self.startWatch()
       })
       .catch(function () {})
   },
 
-  applyRoom(room, seat) {
+  applyRoom(room, seat, opts) {
     if (!room) return
     if (seat === undefined || seat === null || seat < 0) {
       seat = room.playerIds ? room.playerIds.indexOf(this.uid) : -1
@@ -203,8 +223,22 @@ Page({
       !undoRequest
 
     this.seat = seat
-    this.setData({
-      room: room,
+
+    const currentPreview = this.data.preview
+    let nextPreview = currentPreview
+    if (currentPreview) {
+      const occupied = room.board[currentPreview.row * SIZE + currentPreview.col] !== 0
+      const invalid = occupied || room.status !== 'playing' || room.turn !== mine
+      if (invalid || (opts && opts.clearPreview)) nextPreview = null
+    }
+
+    // 完整房间只留在逻辑层，不再随 setData 传给视图层（board/history 很大，容易造成掉帧）
+    this.data.room = room
+
+    const payload = {
+      roomCode: room.code || '',
+      roomStatus: room.status || '',
+      roomTurn: room.turn || '',
       seat: seat,
       myColor: mine,
       oppColor: opp,
@@ -216,19 +250,19 @@ Page({
       rematchLabel: rematchLabel,
       canUndo: canUndo,
       undoPending: undoPending,
-      undoIncoming: undoIncoming
-    })
-
-    const emote = room.emote
-    if (emote && emote.at && emote.at !== this.shownEmoteSeq && Date.now() - emote.at < 5000) {
-      this.shownEmoteSeq = emote.at
-      this.showSticker(emote.key, emote.color, emote.by === this.uid)
+      undoIncoming: undoIncoming,
+      preview: nextPreview
     }
+    if (opts && opts.settlePending) payload.pending = false
+
+    this.setData(payload)
 
     const hint = room.hint
     if (hint && hint.at && hint.at !== this.shownHintSeq && Date.now() - hint.at < 5000) {
       this.showHint(hint)
     }
+
+    this.syncMessages(room)
 
     if (room.status !== 'playing' && this.data.panelOpen) {
       this.setData({ panelOpen: false })
@@ -279,23 +313,97 @@ Page({
     })
   },
 
-  showSticker(key, color, mine) {
-    const text = EMOTE_TEXT[key]
-    if (!text) return
+  syncMessages(room) {
+    const self = this
+    const slots = [
+      { color: 'black', slot: room.sentenceBlack, key: 'msgBlack' },
+      { color: 'white', slot: room.sentenceWhite, key: 'msgWhite' }
+    ]
+
+    slots.forEach(function (item) {
+      const slot = item.slot
+      const at = slot && slot.at ? slot.at : 0
+
+      if (!at) {
+        if (self.shownMsgAt[item.color]) self.shownMsgAt[item.color] = 0
+        if (self.data[item.key]) {
+          const clear = {}
+          clear[item.key] = null
+          self.setData(clear)
+        }
+        return
+      }
+
+      if (self.shownMsgAt[item.color] === at) return
+      self.shownMsgAt[item.color] = at
+
+      const payload = {}
+      payload[item.key] = { text: slot.text, by: slot.by, mine: slot.by === self.uid }
+      self.setData(payload)
+
+      if (self.msgTimers[item.color]) clearTimeout(self.msgTimers[item.color])
+      self.msgTimers[item.color] = setTimeout(function () {
+        const clear = {}
+        clear[item.key] = null
+        self.setData(clear)
+      }, 3000)
+    })
+  },
+
+  onTogglePanel() {
+    this.setData({ panelOpen: !this.data.panelOpen })
+  },
+
+  onCharTap(e) {
+    const ch = e.currentTarget.dataset.ch
+    const draft = this.data.draft
+
+    if (draft.length >= SENTENCE_MAX) {
+      this.toast('最多 ' + SENTENCE_MAX + ' 个字')
+      return
+    }
+
+    this.setData({
+      draft: draft + ch,
+      draftScroll: this.data.draftScroll + 2000
+    })
+  },
+
+  onBackspace() {
+    const draft = this.data.draft
+    if (!draft) return
+    this.setData({ draft: draft.slice(0, -1) })
+  },
+
+  onClearDraft() {
+    if (!this.data.draft) return
+    this.setData({ draft: '' })
+  },
+
+  onSendSentence() {
+    const room = this.data.room
+    const draft = this.data.draft
+
+    if (!room || room.status !== 'playing') return
+    if (!draft) {
+      this.toast('先点几个字')
+      return
+    }
+    if (this.data.sending) return
 
     const self = this
-    this.setData({
-      sticker: {
-        text: text,
-        side: color === 'black' ? 'left' : 'right',
-        mine: !!mine
-      }
-    })
+    this.setData({ sending: true })
 
-    if (this.stickerTimer) clearTimeout(this.stickerTimer)
-    this.stickerTimer = setTimeout(function () {
-      self.setData({ sticker: null })
-    }, 2100)
+    cloud
+      .call('sendSentence', { roomId: room._id, text: draft })
+      .then(function (res) {
+        self.setData({ sending: false })
+        self.applyRoom(res.room, self.seat)
+      })
+      .catch(function (err) {
+        self.setData({ sending: false })
+        self.toast(err.message)
+      })
   },
 
   showHint(hint) {
@@ -320,33 +428,12 @@ Page({
     }, 1600)
   },
 
-  onTogglePanel() {
-    this.setData({ panelOpen: !this.data.panelOpen })
-  },
-
-  onSendEmote(e) {
-    const key = e.currentTarget.dataset.key
-    const room = this.data.room
-    if (!room || room.status !== 'playing') return
-
-    const self = this
-    this.setData({ panelOpen: false })
-
-    cloud
-      .call('sendEmote', { roomId: room._id, key: key })
-      .then(function (res) {
-        self.applyRoom(res.room, self.seat)
-      })
-      .catch(function (err) {
-        self.toast(err.message)
-      })
-  },
-
   onBoardLongPress(e) {
     const touch = e.touches && e.touches[0]
     if (!touch) return
 
     this.longPressed = true
+    if (this.data.preview) this.setData({ preview: null })
     const room = this.data.room
     if (!room || room.status !== 'playing') return
 
@@ -359,9 +446,7 @@ Page({
         const col = Math.round(((touch.clientX - rect.left) / rect.width) * SIZE - 0.5)
         const row = Math.round(((touch.clientY - rect.top) / rect.height) * SIZE - 0.5)
         if (col < 0 || col > SIZE - 1 || row < 0 || row > SIZE - 1) return
-        if (room.board[row * SIZE + col] !== 0) return
-
-        if (wx.vibrateShort) wx.vibrateShort({ type: 'light' })
+        if (room.board[row * SIZE + col] !== 0) return
         cloud
           .call('sendHint', { roomId: room._id, x: col, y: row })
           .then(function (res) {
@@ -418,42 +503,66 @@ Page({
         const col = Math.round(((touch.clientX - rect.left) / rect.width) * SIZE - 0.5)
         const row = Math.round(((touch.clientY - rect.top) / rect.height) * SIZE - 0.5)
         if (col < 0 || col > SIZE - 1 || row < 0 || row > SIZE - 1) return
-        self.place(row, col)
+        self.setPreview(row, col)
       })
       .exec()
+  },
+
+  setPreview(row, col) {
+    const room = this.data.room
+    if (!room) return
+
+    const idx = row * SIZE + col
+    if (room.board[idx] !== 0) return
+
+    this.setData({
+      preview: {
+        row: row,
+        col: col,
+        left: GRID[col],
+        top: GRID[row],
+        color: this.data.myColor
+      }
+    })
+  },
+
+  onCancelPreview() {
+    if (this.data.pending) return
+    this.setData({ preview: null })
+  },
+
+  onConfirmPlace() {
+    const preview = this.data.preview
+    if (!preview || this.data.pending) return
+    this.place(preview.row, preview.col)
   },
 
   place(row, col) {
     const room = this.data.room
     if (!room) return
+
     const idx = row * SIZE + col
-    if (room.board[idx] !== 0) return
+    if (room.board[idx] !== 0) {
+      this.setData({ preview: null })
+      return
+    }
+    if (this.data.pending) return
 
-    const optimistic = this.data.stones.concat([
-      {
-        i: idx,
-        left: GRID[col],
-        top: GRID[row],
-        color: this.data.myColor,
-        win: false,
-        last: true
-      }
-    ])
-
-    this.setData({ pending: true, stones: optimistic })
-    if (wx.vibrateShort) wx.vibrateShort({ type: 'light' })
+    this.setData({ pending: true })
 
     const self = this
     cloud
       .call('place', { roomId: room._id, x: col, y: row })
       .then(function (res) {
-        self.setData({ pending: false })
-        self.applyRoom(res.room, self.seat)
+        self.applyRoom(res.room, self.seat, { clearPreview: true, settlePending: true })
       })
       .catch(function (err) {
+        const msg = err.message || ''
+        const keepPreview = msg.indexOf('网络') >= 0
         self.setData({ pending: false })
-        self.toast(err.message)
-        self.resume()
+        if (!keepPreview) self.setData({ preview: null })
+        self.toast(msg)
+        if (!keepPreview) self.resume()
       })
   },
 
